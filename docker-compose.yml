@@ -1,0 +1,21 @@
+services:
+  collab-editor:
+    build:
+      context: .
+    image: collab-editor:local
+    ports:
+      - "127.0.0.1:1234:1234"
+    environment:
+      # Generated once for local use. Rotating it invalidates every outstanding
+      # token, which is the correct behaviour, not a bug.
+      COLLAB_AUTH_SECRET: ${COLLAB_AUTH_SECRET:-local-development-secret-change-me}
+      # The demo needs the token endpoint, which NODE_ENV=production disables.
+      # Never set this on anything reachable from outside your machine.
+      COLLAB_ALLOW_TOKEN_ENDPOINT: "1"
+      COLLAB_LOG_LEVEL: info
+    volumes:
+      - collab-data:/data
+    restart: unless-stopped
+
+volumes:
+  collab-data:
