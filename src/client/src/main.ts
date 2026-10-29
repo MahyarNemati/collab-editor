@@ -16,6 +16,19 @@ function resolveDocId(): string {
   return isValidDocId(requested) ? requested : 'demo';
 }
 
+/**
+ * Optional identity prefix (`?as=alice`).
+ *
+ * The e2e tests open the same document in two browser contexts and need each
+ * one to be a distinguishable peer; without this they would both be
+ * "client-a" and the presence assertions would be meaningless.
+ */
+function identityPrefix(): string | null {
+  const requested = new URL(window.location.href).searchParams.get('as');
+  if (requested === null) return null;
+  return /^[a-z0-9][a-z0-9-]{0,31}$/.test(requested) ? requested : null;
+}
+
 function paneCount(): number {
   const requested = Number(
     new URL(window.location.href).searchParams.get('panes') ?? '2',
@@ -30,6 +43,7 @@ async function main(): Promise<void> {
 
   const docId = resolveDocId();
   const count = paneCount();
+  const identity = identityPrefix();
 
   app.className = 'flex h-full flex-col gap-3 p-3';
   app.innerHTML = `
@@ -55,12 +69,18 @@ async function main(): Promise<void> {
   const panes: Pane[] = [];
   for (let index = 0; index < count; index += 1) {
     const letter = String.fromCharCode(65 + index);
+    const name =
+      identity === null
+        ? `client-${letter.toLowerCase()}`
+        : count === 1
+          ? identity
+          : `${identity}-${letter.toLowerCase()}`;
     try {
       const pane = await createPane({
-        paneId: `pane-${letter.toLowerCase()}`,
-        label: `Client ${letter}`,
+        paneId: name,
+        label: identity === null ? `Client ${letter}` : name,
         docId,
-        userId: `client-${letter.toLowerCase()}`,
+        userId: name,
         colour: PANE_COLOURS[index] ?? PANE_COLOURS[0],
         wsUrl: wsUrl(),
       });

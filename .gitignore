@@ -9,3 +9,4 @@
 /*.log
 /.env
 /.env.local
+/.e2e-data/
