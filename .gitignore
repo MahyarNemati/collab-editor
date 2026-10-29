@@ -1,14 +1,23 @@
 /node_modules/
 /dist/
-/data/
 /coverage/
+
+# Server state: the update log lives here.
+/data/
+/.e2e-data/
+
+# Test and build artefacts.
 /playwright-report/
+/playwright-report.json
 /test-results/
+/vitest-report.json
 /.vite/
-/.DS_Store
 /*.log
+
 /.env
 /.env.local
-/.e2e-data/
-/vitest-report.json
-/playwright-report.json
+
+# Anchored like everything else, plus the nested form, since macOS writes one
+# of these into every directory it has ever previewed.
+/.DS_Store
+**/.DS_Store
