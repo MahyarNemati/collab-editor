@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.x', '26.x']
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build client and server
+        run: npm run build
+
+      - name: Unit, convergence, property and integration tests
+        run: npx vitest run --reporter=default --reporter=json --outputFile.json=vitest-report.json
+
+      # The tick is not the evidence. Assert that the suites covering the hard
+      # parts were present in this run and that nothing was skipped.
+      - name: Assert the suite actually exercised the system
+        run: |
+          node scripts/check-test-report.mjs vitest-report.json 80 \
+            'real WebSocket' \
+            'survives every client disconnecting' \
+            'recovers the document after the whole server process restarts' \
+            'compacts the log while clients are connected' \
+            'never writes it to the store' \
+            'property: any operation sequence' \
+            'three-way partition'
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-report-node-${{ matrix.node }}
+          path: vitest-report.json
+          retention-days: 7
+
+  e2e:
+    name: e2e (two real browsers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '26.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Playwright's webServer builds and starts the production server itself,
+      # so this is the same artefact the container runs.
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Assert the e2e suite actually ran
+        run: |
+          node scripts/check-e2e-report.mjs playwright-report.json 4 \
+            'two browser contexts converge' \
+            'survive a reload' \
+            'both clients editing while offline' \
+            'survives every client leaving'
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            playwright-report.json
+            test-results
+          retention-days: 7
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate compose file
+        run: docker compose config --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: collab-editor:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Building an image proves it compiles. Running it proves the entrypoint,
+      # the non-root user and the data volume actually work together.
+      - name: Start the container and exercise it
+        run: |
+          set -euo pipefail
+          docker run -d --name collab-ci \
+            -e COLLAB_AUTH_SECRET=ci-secret \
+            -e COLLAB_ALLOW_TOKEN_ENDPOINT=1 \
+            -p 1234:1234 collab-editor:ci
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:1234/healthz > /dev/null; then break; fi
+            sleep 1
+          done
+
+          echo "--- healthz"
+          curl -fsS http://127.0.0.1:1234/healthz | tee /tmp/healthz
+          grep -q '"status":"ok"' /tmp/healthz
+
+          echo "--- metrics"
+          curl -fsS http://127.0.0.1:1234/metrics | tee /tmp/metrics | head -5
+          grep -q '^collab_rooms ' /tmp/metrics
+
+          echo "--- static client"
+          curl -fsS http://127.0.0.1:1234/ | grep -qi '<title>collab-editor</title>'
+
+          echo "--- token endpoint"
+          curl -fsS 'http://127.0.0.1:1234/api/token?doc=ci&user=ci&role=write' \
+            | grep -q '"token"'
+
+          echo "--- runs as a non-root user"
+          test "$(docker exec collab-ci id -u)" != "0"
+
+      - name: Container logs
+        if: always()
+        run: docker logs collab-ci || true
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f collab-ci || true

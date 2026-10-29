@@ -10,3 +10,5 @@
 /.env
 /.env.local
 /.e2e-data/
+/vitest-report.json
+/playwright-report.json
