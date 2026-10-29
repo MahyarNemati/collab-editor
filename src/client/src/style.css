@@ -1,0 +1,38 @@
+@import 'tailwindcss';
+
+/* CodeMirror needs a concrete height to scroll rather than grow. */
+.cm-editor {
+  height: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+.cm-scroller {
+  overflow: auto;
+}
+
+/* Remote carets drawn by y-codemirror.next. */
+.cm-ySelectionCaret {
+  position: relative;
+  border-left: 2px solid;
+  border-right: 0;
+  margin-left: -1px;
+  box-sizing: border-box;
+}
+.cm-ySelectionInfo {
+  position: absolute;
+  top: -1.1em;
+  left: -2px;
+  padding: 1px 4px;
+  font-size: 10px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  line-height: normal;
+  white-space: nowrap;
+  color: #0f172a;
+  opacity: 1;
+  border-radius: 3px 3px 3px 0;
+  user-select: none;
+  z-index: 10;
+}
